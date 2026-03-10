@@ -4,35 +4,15 @@ import torch
 from typing import TypedDict, Literal,Sized
 from pathlib import Path
 from tifffile import imread as tiff_imread
+import json
 
 
-S2_MEAN: list[float] = [
-    752.40087073, 884.29673756, 1144.16202635, 1297.47289228,
-    1624.90992062, 2194.6423161, 2422.21248945, 2581.64687018,
-    2368.51236873, 1805.06846033,
-]
-S2_STD: list[float] = [
-    1108.02887453, 1155.15170768, 1183.6292542,  1368.11351514,
-    1370.265037,   1355.55390699, 1416.51487101, 1439.3086061,
-    1455.52084939, 1343.48379601,
-]
+def _load_config(config_path: Path)->dict:
+    with open(config_path,'r') as f:
+        return json.load(f)
 
-S2_CHANNEL_WV: list[float] = [
-    442.7, 492.4, 559.8, 664.6, 704.1,
-    740.5, 782.8, 864.7, 1613.7, 2202.4,
-]
 
-_LABEL_REMAP: dict[int, int] = {
-    21: 1,
-    22: 2,
-    23: 3,
-    31: 4,
-    32: 6,
-    33: 7,
-    41: 8,
-    13: 9,
-    14: 10,
-}
+
 
 
 type _SplitName = Literal["train","val","test"]
@@ -89,19 +69,17 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
     _VEG_RED_EDGE              : slice = slice(4,7)
     _SWIR_SLICE                : slice = slice(8,10)
 
-    _METADATA_FILE : str = "Add the metadata.csv path"
-    _INNER_DIR     : str = " Add the segmunich directory path"
 
-    NUM_CLASSES    : int = 13
-    SPATIAL_RESOLUTION : int = 10 #(in meters)
-    IMG_SIZE : int =128
+
 
 
     def __init__(
             self,
             data_root:Path,
             split:_SplitName,
-            apply_remap:bool=True
+            config_path: Path,
+            apply_remap:bool=True,
+            
         )->None:
         
         """
@@ -119,11 +97,30 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
         """
 
         super().__init__()
-        self._data_root : Path = Path(data_root) / self._INNER_DIR
+        cfg =_load_config(config_path=config_path)
+
+        # Dataset Config
+        self._inner_dir = cfg["dataset"]["inner_dir"]
+        self._metadata_file = cfg["dataset"]["metadata_file"]
+        self._num_classes = cfg["dataset"]["num_classes"]
+        self._spatial_resolution = cfg["dataset"]["spatial_resolution"]
+        self._img_size = cfg["dataset"]["image_size"]
+
+        # Band Config
+        self._channel_wv = torch.Tensor(cfg["bands"]["channel_wv"])
+        self.S2_MEAN = cfg["bands"]["mean"]
+        self.S2_STD = cfg["bands"]["mean"]
+
+        self._label_remap: dict[int, int] = {
+            int(k): int(v) for k, v in cfg["label_remap"].items()
+        }
+
+
+        self._data_root : Path = Path(data_root) / self._inner_dir
         self._split : _SplitName = split
         self._apply_remap : bool = apply_remap
         
-        self.metadata_path : Path = Path(data_root) / self._METADATA_FILE
+        self.metadata_path : Path = Path(data_root) / self._metadata_file
 
         self.full_meta : pd.DataFrame = pd.read_csv(self.metadata_path)
 
@@ -132,15 +129,7 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
             .reset_index(drop=True)
         )
 
-        self._channel_wv: torch.Tensor = torch.tensor(
-            S2_CHANNEL_WV, dtype=torch.float32
-        )
-
-
-
-
-
-
+        
     def __len__(self)->int:
         return len(self._meta)
 
@@ -149,22 +138,19 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
 
         optical_path : Path = self._data_root / row["optical_path"]
         optical_array : np.ndarray = tiff_imread(str(optical_path))
-
         if optical_array.ndim==3:
             optical_array = np.transpose(optical_array, (2, 0, 1))
-
         optical: torch.Tensor = torch.from_numpy(optical_array.copy()).to(torch.float32)
 
         label: torch.Tensor | None = None
         label_path_str : str = row.get("label_path","")
         if pd.notna(label_path_str) and label_path_str != "":
             label_path: Path = self._data_root / label_path_str
-
             if label_path.exists():
                 label = torch.from_numpy(tiff_imread(str(label_path)).copy()).to(torch.int32)
                 if self._apply_remap:
                     remapped = label.clone()
-                    for raw_val, class_idx in _LABEL_REMAP.items():
+                    for raw_val, class_idx in self._label_remap.items():
                         remapped[label == raw_val] = class_idx
                     label = remapped
 
@@ -175,6 +161,8 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
         swir: torch.Tensor            = optical[self._SWIR_SLICE]
         veg_red_edge: torch.Tensor    = optical[self._VEG_RED_EDGE]
         coastal_aerosol: torch.Tensor = optical[self._B01_COASTAL_AEROSOL_INDEX]
+        
+        
         return SegMunich_Sample(
             optical=optical, # Shape (10,128,128)
             rgb=rgb,
@@ -186,65 +174,4 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
             spatial_resolution=self.SPATIAL_RESOLUTION,
             label=label
         )
-        
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-       
+   
