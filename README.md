@@ -25,7 +25,7 @@ SegMunich is a semantic segmentation dataset based on **Sentinel-2 satellite ima
 
 All 10 Sentinel-2 bands alongside the RGB composite and segmentation label for a single training sample:
 
-![SegMunich Sample](notebooks/segmunich_sample0.png)
+![SegMunich Sample](src/notebooks/segmunich_sample0.png)
 
 ---
 
