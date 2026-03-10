@@ -12,6 +12,11 @@ def _load_config(config_path: Path)->dict:
         return json.load(f)
 
 
+config_path: Path = Path("/home/moonlab/Mars/src/utils/data/segmunich_config.json")
+    
+cfg =_load_config(config_path=config_path)
+
+
 
 
 
@@ -97,7 +102,7 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
         """
 
         super().__init__()
-        cfg =_load_config(config_path=config_path)
+        
 
         # Dataset Config
         self._inner_dir = cfg["dataset"]["inner_dir"]
@@ -120,7 +125,7 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
         self._split : _SplitName = split
         self._apply_remap : bool = apply_remap
         
-        self.metadata_path : Path = Path(data_root) / self._metadata_file
+        self.metadata_path : Path = self._data_root / self._metadata_file
 
         self.full_meta : pd.DataFrame = pd.read_csv(self.metadata_path)
 
@@ -171,7 +176,7 @@ class SegMunich_Dataset(Sized,torch.utils.data.Dataset[SegMunich_Sample]):
             veg_red_edge=veg_red_edge,
             coastal_aerosol=coastal_aerosol,
             optical_channel_wv=self._channel_wv,
-            spatial_resolution=self.SPATIAL_RESOLUTION,
+            spatial_resolution=cfg["dataset"]["spatial_resolution"],
             label=label
         )
    
